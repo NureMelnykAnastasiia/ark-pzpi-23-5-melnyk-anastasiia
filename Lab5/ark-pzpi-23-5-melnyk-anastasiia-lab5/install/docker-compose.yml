@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  # --- BACKEND ---
+  app:
+    image: coreuser1/smart-plant-backend:v1.0  # <--- Тягнемо готовий образ
+    container_name: backend-app
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:password@db:5432/smartplant_db
+      - PORT=3000
+      - JWT_SECRET=supersecretkey
+    depends_on:
+      - db
+    networks:
+      - smart-plant-network
+    volumes:
+      - ./backups:/app/backups
+      - ./uploads:/app/uploads
+
+  db:
+    image: postgres:15-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: smartplant_db
+    networks:
+      - smart-plant-network
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  mqtt-broker:
+    image: eclipse-mosquitto:2
+    container_name: mqtt-broker
+    restart: always
+    ports:
+      - "1883:1883"
+    command: mosquitto -c /mosquitto-no-auth.conf
+    volumes:
+      - ./mosquitto/config:/mosquitto/config
+      - ./mosquitto/data:/mosquitto/data
+    networks:
+      - smart-plant-network
+
+  smart-bridge:
+    image: coreuser1/emulator:v1.0  
+    container_name: iot-client
+    restart: unless-stopped
+    depends_on:
+      - mqtt-broker
+      - app
+    environment:
+      - MQTT_BROKER=mqtt-broker
+      - MQTT_PORT=1883
+      - TOPIC_PREFIX=plant
+      - API_ENDPOINT=http://backend-app:3000/api/logs
+    networks:
+      - smart-plant-network
+    volumes:
+      - ./sensor_history.json:/app/sensor_history.json
+
+networks:
+  smart-plant-network:
+    driver: bridge
+
+volumes:
+  postgres_data:

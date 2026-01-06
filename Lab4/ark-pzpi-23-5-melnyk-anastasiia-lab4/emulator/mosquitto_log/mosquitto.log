@@ -1,0 +1,29 @@
+1767349743: mosquitto version 2.0.22 starting
+1767349743: Config loaded from /mosquitto/config/mosquitto.conf.
+1767349743: Opening ipv4 listen socket on port 1883.
+1767349743: Opening ipv6 listen socket on port 1883.
+1767349743: mosquitto version 2.0.22 running
+1767349744: New connection from 172.19.0.5:49177 on port 1883.
+1767349744: New client connected from 172.19.0.5:49177 as auto-DFAB65E4-33A1-AFB1-13FF-EECC9C11D55C (p2, c1, k60).
+1767349746: New connection from 172.19.0.5:53365 on port 1883.
+1767349746: New client connected from 172.19.0.5:53365 as auto-494B6F73-3DB2-09EE-3BDC-0DF4FC7BB0BD (p2, c1, k60).
+1767349908: Client auto-DFAB65E4-33A1-AFB1-13FF-EECC9C11D55C closed its connection.
+1767349908: Client auto-494B6F73-3DB2-09EE-3BDC-0DF4FC7BB0BD closed its connection.
+1767349908: mosquitto version 2.0.22 terminating
+1767349908: Saving in-memory database to /mosquitto/data//mosquitto.db.
+1767350537: mosquitto version 2.0.22 starting
+1767350537: Config loaded from /mosquitto/config/mosquitto.conf.
+1767350537: Opening ipv4 listen socket on port 1883.
+1767350537: Opening ipv6 listen socket on port 1883.
+1767350537: mosquitto version 2.0.22 running
+1767350537: New connection from 172.19.0.3:58183 on port 1883.
+1767350537: New client connected from 172.19.0.3:58183 as auto-3AC8088D-9EFC-7B87-E558-72909F000480 (p2, c1, k60).
+1767350539: New connection from 172.19.0.3:38007 on port 1883.
+1767350539: New client connected from 172.19.0.3:38007 as auto-99C03001-EF33-958A-2BE2-136C0602DD51 (p2, c1, k60).
+1767350566: Client auto-3AC8088D-9EFC-7B87-E558-72909F000480 closed its connection.
+1767350566: Client auto-99C03001-EF33-958A-2BE2-136C0602DD51 closed its connection.
+1767352426: Saving in-memory database to /mosquitto/data//mosquitto.db.
+1767354325: Saving in-memory database to /mosquitto/data//mosquitto.db.
+1767356226: Saving in-memory database to /mosquitto/data//mosquitto.db.
+1767357753: mosquitto version 2.0.22 terminating
+1767357753: Saving in-memory database to /mosquitto/data//mosquitto.db.

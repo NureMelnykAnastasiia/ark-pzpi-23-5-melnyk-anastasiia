@@ -1,0 +1,259 @@
+﻿МІНІСТЕРСТВО ОСВІТИ І НАУКИ УКРАЇНИ
+ХАРКІВСЬКИЙ НАЦІОНАЛЬНИЙ УНІВЕРСИТЕТ РАДІОЕЛЕКТРОНІКИ
+
+
+КАФЕДРА ПРОГРАМНОЇ ІНЖЕНЕРІЇ
+
+
+
+
+Звіт
+з лабораторної роботи № 5 з дисципліни
+Аналіз та рефакторинг коду
+
+
+
+
+
+
+
+
+
+
+Виконала:                                                                Перевірив:
+ст. гр. ПЗПІ-23-5                				ст. викладач кафедри ПІ
+Мельник Анастасія					Сокорчук Ігор Петрович
+	
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Харків 2025
+
+
+1 ІСТОРІЯ ЗМІН
+      №
+      Дата
+Версія звіту
+Опис змін та виправлень
+      1
+      01.01.2026
+      0.1
+      Початкова версія
+
+      
+
+
+
+
+2 ЗАВДАННЯ
+
+1. Розгорнути створену програмну систему: Використовуючи інструменти для розгортання (наприклад, Docker, Kubernetes, хмарні сервіси), розгорнути серверну частину, веб-клієнт, мобільний клієнт та IoT клієнт. Налаштувати середовище для роботи програмної системи (сервер, база даних, мережеві налаштування).
+2. Перевірити та налаштувати роботу розгорнутої програмної системи: Провести перевірку стабільності та коректності роботи усіх компонентів програмної системи (серверна частина, IoT клієнт, база даних,  API). Виконати налаштування параметрів серверної частини, клієнтських  застосунків та мережевих протоколів для коректної роботи системи.
+3. Продемонструвати описану у розділі 2.2 Vision & Scope функціональність програмної системи: Описати та продемонструвати всі функції, передбачені в розділі  2.2 Vision & Scope, включаючи бізнес логіку, функції адміністрування та  взаємодію між серверною частиною та клієнтами. Перевірити реалізацію всіх необхідних функціональних можливостей програмної системи
+
+3 ОПИС ВИКОНАНОЇ РОБОТИ
+
+     Система складається з декількох контейнерів, які взаємодіють у межах однієї мережі Docker (eco-office-network) для забезпечення IoT-функціональності, зберігання даних та веб-сервісів.
+     Перший компонент - це Node.js бекенд (app), який відповідає за API та збереження даних у базі PostgreSQL (див. дод. Б, docker-compose.yml). Контейнер піднімається з локальної збірки, проксіює порт 3000 на хост, та отримує змінні середовища для підключення до бази даних (DATABASE_URL), а також секрет для JWT (JWT_SECRET) і порт для запуску. Для збереження даних та резервних копій він монтує два каталоги з хоста: ./uploads та ./backups. Контейнер залежить від db, тобто не стартує раніше, ніж запуститься база.
+     База даних PostgreSQL 15 піднімається у власному контейнері (db) із стандартними налаштуваннями користувача та пароля, з базою ecooffice. Її дані зберігаються у Docker volume postgres_data, що забезпечує персистентність навіть після видалення контейнера. База слухає порт 5432 на хості та підключена до тієї ж мережі.
+     Другий компонент - це MQTT-брокер (mqtt-broker) на основі образу eclipse-mosquitto:2. Він відповідає за передачу даних між IoT-пристроями та бекендом. MQTT-брокер слухає стандартний порт 1883 для протоколу MQTT та веб-порт 9001 для WebSocket-клієнтів. Конфігурація брокера зберігається у монтуваному файлі mosquitto.conf, а його дані і лог-файли теж зберігаються на хості, що забезпечує стійкість при перезапусках.
+     Третій компонент - IoT-клієнт (iot-client), який реалізований на Python (див. дод. Б, docker-compose.yml). Він емулює сенсори і віртуальне середовище, з якого зчитує показники температури, вологості, освітленості, вологості ґрунту та рівня батареї. Контейнер піднімається з локальної збірки Python і залежить від брокера (mqtt-broker). Клієнт підключається до брокера по MQTT (MQTT_BROKER і MQTT_PORT), публікує дані у топік eco-office/devices/... з певним інтервалом (SEND_INTERVAL=5). Він також може взаємодіяти з бекендом через API (API_BASE_URL=http://localhost:3000). Для збереження історії показників сенсорів використовується монтуваний файл sensor_history.json.
+     Node.js контейнер збирається у два етапи: спершу створюється образ builder, який встановлює всі залежності та будує TypeScript-проект у папку dist. Потім фінальний образ встановлює тільки production-залежності, копіює зібрану папку dist, створює каталоги uploads та backups і піднімає сервер на порті 3000. Для роботи з PostgreSQL додається утиліта postgresql-client.
+     Python-контейнер базується на легкому образі python:3.10-slim. Він встановлює залежності з requirements.txt, копіює весь код і створює директорію logs для логів. Для персистентності історії сенсорів монтується файл sensor_history.json. Основний процес — launcher.py, який відповідає за цикл емуляції сенсорів, генерацію фізичних моделей середовища, публікацію даних у MQTT і опціональне відправлення на API.
+     Мережа eco-office-network є спільною для всіх контейнерів, що дозволяє Node.js, MQTT-брокеру та Python-клієнту взаємодіяти без використання зовнішніх IP-адрес.
+     Система дозволяє емуляцію IoT-екосистеми із реалістичною фізичною поведінкою сенсорів, передачу даних у реальному часі через MQTT, збереження даних у базі і логування аномалій. Архітектура є модульною і масштабованою: можна додавати нові сенсори, клієнти чи API без змін у базовій інфраструктурі. Система підтримує персистентність даних (через volume), централізоване логування, а також просту інтеграцію із зовнішніми сервісами.
+     Bash скрипт автоматизує розгортання системи EcoOffice у Docker. Він починає з перевірки наявності Docker та Docker Compose і визначає, яку команду для Compose використовувати (docker-compose або docker compose). Далі перевіряє файл sensor_history.json, який використовується для зберігання історії показників сенсорів: якщо його немає або на його місці директорія, скрипт створює порожній JSON-файл, щоб уникнути помилок контейнера.
+     
+     Потім створюються потрібні каталоги для MQTT-брокера Mosquitto (config, data, log). Скрипт зупиняє старі контейнери за допомогою Compose і піднімає нові у фоновому режимі (up -d). Після запуску він виводить логи контейнерів у реальному часі, дозволяючи відслідковувати роботу системи, при цьому контейнери продовжують працювати у фоні після виходу з перегляду логів.
+
+
+4 ВИСНОВКИ
+     
+     У рамках лабораторної роботи розгорнуто комплексну програмну систему EcoOffice, що складається з серверної частини, IoT-клієнта, бази даних та MQTT-брокера. Система була налаштована та перевірена на коректність взаємодії між усіма компонентами.
+     Backend на Node.js працює як центральний API-сервер і забезпечує збереження даних у PostgreSQL з підтримкою персистентності через Docker volume. MQTT-брокер Mosquitto забезпечує ефективну передачу даних від IoT-клієнта до серверу. Python-клієнт емуляції сенсорів генерує реалістичні показники середовища, публікує їх через MQTT і опціонально надсилає на API, що дозволяє тестувати бізнес-логіку та функції адміністрування.
+     Використання Docker Compose і спільної мережі забезпечило ізольовану, стабільну та масштабовану інфраструктуру. Bash-скрипт автоматизує весь процес запуску, налаштування персистентних файлів та каталогів, підняття контейнерів і перегляд логів у реальному часі, що значно спрощує розгортання системи.
+     Система показала модульність, гнучкість і готовність до розширення: можна додавати нові сенсори, клієнти або інтегрувати зовнішні сервіси без зміни базової архітектури. Всі цілі лабораторної роботи були досягнуті: розгортання, перевірка стабільності та демонстрація функціональності.
+
+
+
+
+ДОДАТОК А
+
+Відеозапис 
+
+Відеозапис презентації результатів лабораторної роботи: 
+https://youtu.be/ejih03TpjbA
+
+Хронологічний опис відеозапису:
+
+
+
+
+ДОДАТОК Б
+
+Docker-compose.yml для Backend
+
+1. version: '3.8'
+2. 
+3. services:
+4.   app:
+5.     build: .
+6.     container_name: backend-app
+7.     ports:
+8.       - "3000:3000"
+9.     environment:
+10.       - DATABASE_URL=postgresql://postgres:password@db:5432/ecooffice
+11.       - PORT=3000
+12.       - JWT_SECRET=supersecretkey
+13.     depends_on:
+14.       - db
+15.     networks:
+16.       - eco-office-network
+17.     volumes:
+18.       - ./backups:/app/backups
+19.       - ./uploads:/app/uploads
+20. 
+21.   db:
+22.     image: postgres:15-alpine
+23.     restart: always
+24.     environment:
+25.       POSTGRES_USER: postgres
+26.       POSTGRES_PASSWORD: password
+27.       POSTGRES_DB: ecooffice
+28.     ports:
+29.       - "5432:5432"
+30.     networks:
+31.       - eco-office-network 
+32.     volumes:
+33.       - postgres_data:/var/lib/postgresql/data
+34. 
+35. networks:
+36.   eco-office-network:
+37.     name: eco-office-network
+38.     driver: bridge
+39. 
+40. volumes:
+41.   postgres_data:
+
+Docker-compose.yml для IoT
+1. version: '3.8'
+2. 
+3. services:
+4. 
+5.   mqtt-broker:
+6.     image: eclipse-mosquitto:2
+7.     container_name: mqtt-broker
+8.     restart: always
+9.     ports:
+10.       - "1883:1883" 
+11.       - "9001:9001"
+12.     volumes:
+13.       - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+14.       - ./mosquitto_data:/mosquitto/data
+15.       - ./mosquitto_log:/mosquitto/log
+16.     networks:
+17.       - eco-office-network
+18. 
+19.   iot-client:
+20.     build: .
+21.     container_name: iot-client
+22.     restart: unless-stopped
+23.     depends_on:
+24.       - mqtt-broker
+25.     environment:
+26.       - MQTT_BROKER=mqtt-broker
+27.       - MQTT_PORT=1883
+28.       - TOPIC_PREFIX=eco-office/devices
+29.    
+30.       - API_BASE_URL=http://localhost:3000
+31.       
+32.       - SEND_INTERVAL=5
+33.     volumes:
+34.      
+35.       - ./sensor_history.json:/app/sensor_history.json
+36.     networks:
+37.       - eco-office-network
+38. 
+39. networks:
+40.   eco-office-network:
+41.     external: true
+
+
+
+Install.sh
+1. #!/bin/bash
+2. 
+3. COMPOSE_FILE="docker-compose.yml"
+4. 
+5. echo "Starting EcoOffice System Deployment..."
+6. 
+7. if ! command -v docker &> /dev/null; then
+8.     echo "Error: Docker is not installed. Please install Docker first."
+9.     exit 1
+10. fi
+11. 
+12. if command -v docker-compose &> /dev/null; then
+13.     DOCKER_COMPOSE_CMD="docker-compose"
+14. elif docker compose version &> /dev/null; then
+15.     DOCKER_COMPOSE_CMD="docker compose"
+16. else
+17.     echo "Error: Docker Compose is not installed."
+18.     exit 1
+19. fi
+20. 
+21. echo "Docker is installed. Using compose command: '$DOCKER_COMPOSE_CMD'"
+22. 
+23. HISTORY_FILE="./sensor_history.json"
+24. 
+25. if [ -d "$HISTORY_FILE" ]; then
+26.     echo "Found directory instead of file at $HISTORY_FILE. Removing..."
+27.     rm -rf "$HISTORY_FILE"
+28. fi
+29. 
+30. if [ ! -f "$HISTORY_FILE" ]; then
+31.     echo "Creating empty $HISTORY_FILE to prevent Docker errors..."
+32.     echo "{}" > "$HISTORY_FILE"
+33. else
+34.     echo "$HISTORY_FILE exists."
+35. fi
+36. 
+37. mkdir -p mosquitto/config mosquitto/data mosquitto/log
+38. 
+39. if [ -f "$COMPOSE_FILE" ]; then
+40.    
+41. 
+42.     echo "Stopping old containers..."
+43.     $DOCKER_COMPOSE_CMD -f "$COMPOSE_FILE" down
+44. 
+45.     echo "Starting new containers..."
+46.     $DOCKER_COMPOSE_CMD -f "$COMPOSE_FILE" up -d
+47. 
+48.     echo "System started successfully!"
+49.     echo "Showing logs (Press Ctrl+C to exit logs, containers will keep running)..."
+50.     sleep 2
+51.     $DOCKER_COMPOSE_CMD -f "$COMPOSE_FILE" logs -f
+52. else
+53.     echo "Error: $COMPOSE_FILE not found!"
+54.     exit 1
+55. fi
+56.
+2
+
+

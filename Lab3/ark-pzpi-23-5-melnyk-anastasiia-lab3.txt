@@ -1,0 +1,543 @@
+﻿МІНІСТЕРСТВО ОСВІТИ І НАУКИ УКРАЇНИ
+ХАРКІВСЬКИЙ НАЦІОНАЛЬНИЙ УНІВЕРСИТЕТ РАДІОЕЛЕКТРОНІКИ
+
+
+КАФЕДРА ПРОГРАМНОЇ ІНЖЕНЕРІЇ
+
+
+
+
+Звіт
+з лабораторної роботи № 3 з дисципліни
+Аналіз та рефакторинг коду
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Виконала:                                                                Перевірив:
+ст. гр. ПЗПІ-23-5                				ст. викладач кафедри ПІ
+Мельник Анастасія		 			Сокорчук Ігор Петрович
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Харків 2025
+
+1 ІСТОРІЯ ЗМІН
+      №
+      Дата
+Версія звіту
+      Опис змін та виправлень
+      1
+      01.01.2026
+      0.1
+      Початкова версія
+
+      
+
+
+
+
+2 ЗАВДАННЯ
+
+1. Розробити бізнес логіку серверної частини програмної системи.
+2. Розробити функції адміністрування серверної частини програмної системи.
+3. Створити програмну реалізацію бізнес логіки та функцій адміністрування серверної частини.
+4. Перевірити роботу серверної частини системи.
+5. Завантажити або оновити (при потребі) створений програмний код у GitHub репозиторій для лабораторних робіт у гілку репозиторію main.
+6. Створити відеозапис демонстрації описаної у розділі 3.1 Vision & Scope функціональності серверної частини та завантажити цей відеозапис у свій канал на YouTube для облікового запису в домені @nure.ua.  При завантаженні відеозапису потрібно обовʼязково встановити у налаштуваннях для цього відео українську мову як мову відео та мову субтитрів до відео.
+7. Створити хронологічний опис (хвилина:секунда) демонстрації та додати цей опис до опису відео.
+8. Створити звіт до лабораторної роботи.
+9. Експортувати створений звіт у формат PDF та завантажити його на платформу dl.nure.ua.
+10. Експортувати увесь створений звіт у простий текстовий файл з кодуванням UTF-8 та записати цей файл у GitHub репозиторій для лабораторних робіт з вказаним у цих методичних вказівках іменем файла та директорії.
+
+
+3 ОПИС ВИКОНАНОЇ РОБОТИ
+
+	
+     Система управління EcoOffice реалізує рольову модель доступу (див. дод. Б), де права користувачів чітко розмежовані залежно від їхніх функціональних обов'язків. У системі визначено чотири основні ролі: ADMIN, OFFICE_MANAGER, FLORIST та CLEANER. Нижче наведено детальний опис можливостей для кожної з них.
+     Адміністратор (ADMIN) має повний і необмежений доступ до всіх модулів системи. Це єдина роль, яка має право керувати апаратною частиною та безпекою даних. Зокрема, лише адміністратор може створювати, редагувати та видаляти IoT-сенсори, а також вручну коригувати показники телеметрії у разі збоїв. Критично важливою функцією адміністратора є управління резервним копіюванням: він має доступ до створення дампів бази даних (backups), завантаження їх на локальний пристрій та відновлення системи з архіву. Крім того, адміністратор має право редагувати або видаляти записи в журналі догляду (care logs), що забезпечує контроль за достовірністю звітів персоналу. Він також дублює права всіх інших ролей, маючи можливість керувати локаціями, рослинами та видами.
+     Офіс-менеджер (OFFICE_MANAGER) відповідає за організацію простору офісу. Його права зосереджені навколо сутності "Локації" (locations). Менеджер може створювати нові кімнати та зони, редагувати їх опис, поверхи та завантажувати карти приміщень, а також видаляти неактуальні локації. Стосовно інших модулів (рослини, сенсори, журнали догляду), менеджер має права лише на перегляд інформації, що дозволяє йому контролювати загальний стан офісу, але не втручатися в агротехнічні процеси чи технічне налаштування.
+     Флорист (FLORIST) є ключовою фігурою в управлінні "зеленим фондом". Йому надано повний доступ до управління сутностями "Рослини" (plants) та "Види рослин" (plant species). Флорист може додавати нові рослини в систему, змінювати їхній статус здоров'я та переміщувати між локаціями. Також він наповнює довідник видів рослин, вказуючи вимоги до вологості, температури та освітлення. Окрім цього, флорист має доступ до аналітичного модуля (stats), що дозволяє йому переглядати зведену статистику по системі. Як і звичайний персонал, він може створювати записи про виконання догляду, але не може видаляти історію дій.
+     Прибиральник (CLEANER) - це базова роль з обмеженим функціоналом, орієнтованим виключно на виконання завдань. Користувач із цією роллю має доступ до перегляду інформації про рослини, локації та завдання, що необхідно для орієнтації в офісі. Головна функція прибиральника — це створення записів у журналі догляду (POST /api/logs). Це дозволяє йому звітувати про виконану роботу (наприклад, полив або прибирання листя), в тому числі з підтвердженням через сканування QR-коду. Прибиральник не має прав на зміну налаштувань системи, редагування списку рослин або перегляд аналітики.
+     Для первірки автентифікації та ролі використовується код (рядок 1-46)
+1. import { Request, Response, NextFunction } from 'express';
+2. import jwt from 'jsonwebtoken';
+3. import 'dotenv/config';
+4. 
+5. const JWT_SECRET = process.env.JWT_SECRET || 'secret';
+6. 
+7. const PUBLIC_PATHS = [
+8.   { path: '/api/readings/iot', method: 'POST' },
+9. ];
+10. 
+11. export const authenticate = (req: Request, res: Response, next: NextFunction) => {
+12.   if (PUBLIC_PATHS.some(p => p.path === req.path && p.method === req.method)) {
+13.     return next();
+14.   }
+15. 
+16.   const authHeader = req.headers.authorization;
+17. 
+18.   if (!authHeader) {
+19.     return res.status(401).json({ message: 'Authorization header missing' });
+20.   }
+21. 
+22.   const token = authHeader.split(' ')[1]; 
+23. 
+24.   try {
+25.     const decoded = jwt.verify(token, JWT_SECRET) as { id: string; role: string };
+26.     req.user = decoded;
+27.     next();
+28.   } catch (error) {
+29.     return res.status(401).json({ message: 'Invalid or expired token' });
+30.   }
+31. };
+32. 
+33. export const authorize = (allowedRoles: string[]) => {
+34.   return (req: Request, res: Response, next: NextFunction) => {
+35.     if (!req.user) {
+36.       return res.status(401).json({ message: 'User not authenticated' });
+37.     }
+38. 
+39.     if (!allowedRoles.includes(req.user.role)) {
+40.       return res.status(403).json({ message: 'Access denied. Insufficient permissions.' });
+41.     }
+42. 
+43.     next(); 
+44.   };
+45. };
+46.
+
+     Сервіс analysis.service.ts (див. дод. В) аналізу здоров’я рослини працює як багатокритеріальна система прийняття рішень, що базується на сенсорних даних, часових рядах і біологічних нормах, заданих для конкретного виду рослин. Його основна мета - перетворити «сирі» вимірювання сенсорів у осмислені дії у вигляді задач для персоналу.
+     Аналіз починається з агрегації даних: для заданої рослини вибираються всі пов’язані сенсори, після чого завантажуються їхні показники за останні 7 днів. Це вікно часу обране як компроміс між короткостроковими коливаннями середовища та довгостроковими тенденціями. Окремо виділяються свіжі показники за останні 24 години, які використовуються для оперативних перевірок граничних значень.
+     Температурний аналіз базується на порівнянні поточної температури повітря з мінімальними та максимальними допустимими значеннями для виду. Якщо температура виходить за межі норми, формується критичне повідомлення. Логіка тут дискретна: перевищення верхньої або нижньої межі автоматично вважається стресом, незалежно від швидкості зміни температури. Текст повідомлення включає фактичне значення, норматив та біологічну інтерпретацію (переохолодження або перегрів).
+     Світловий аналіз має два рівні. Перший - миттєвий: якщо освітленість перевищує максимальну допустиму для виду, генерується попередження про ризик опіків. Другий - контекстний: у денний час (робочі години) освітленість порівнюється з мінімальною нормою, зниженою вдвічі. Це вводить часовий фактор у логіку: низьке світло вночі не вважається проблемою, а вдень сигналізує про дефіцит енергії фотосинтезу.
+     Аналіз вологості ґрунту працює з асиметричними порогами. Перевищення максимальної вологості з додатковим буфером у 10% трактується як ризик загнивання коренів, тоді як падіння нижче мінімуму - як критична ситуація, що потребує негайного поливу. Повідомлення формуються з чітким акцентом на наслідки для кореневої системи, а не лише на числові значення.
+     Окремо реалізований прогнозний аналіз поливу, який уже використовує математичну модель. За останні 48 годин будується часовий ряд «час – вологість ґрунту». Якщо даних недостатньо, аналіз не проводиться. Для достатньої кількості точок обчислюється лінійна регресія, яка апроксимує швидкість висихання ґрунту. Отриманий нахил прямої інтерпретується як швидкість втрати вологи. Якщо тренд спадний, система екстраполює момент часу, коли вологість досягне мінімально допустимого рівня. Якщо цей момент настане протягом найближчих 24 годин, створюється задача з дедлайном, що відповідає прогнозованому часу пересихання. Таким чином, полив планується не реактивно, а на випередження.
+     Ризик шкідників і грибкових захворювань оцінюється через дефіцит тиску пари (VPD) фізичний показник, що поєднує температуру і відносну вологість повітря. Спочатку розраховується тиск насиченої водяної пари за експоненціальною формулою, після чого визначається VPD як різниця між насиченим і фактичним парціальним тиском. Високі значення VPD інтерпретуються як надмірно сухе повітря, що створює сприятливі умови для павутинного кліща, тоді як надто низькі як ризик грибкових інфекцій. Повідомлення формуються з прямим біологічним поясненням ризику.
+     Добовий світловий інтеграл оцінюється через інтегрування освітленості за часом. Показники люксів об’єднуються методом трапецій, де для кожного інтервалу береться середнє значення світла, помножене на тривалість інтервалу в годинах. Отримане значення люкс-годин порівнюється з орієнтовною добовою потребою виду, яка оцінюється як мінімальна освітленість, помножена на 12 годин. Якщо фактичний інтеграл значно нижчий за норму, формується повідомлення про хронічний дефіцит світла, а не разове відхилення.
+     Логіка підживлення базується не на сенсорних даних, а на подієвій історії догляду. Визначається дата останнього внесення добрив або дата створення рослини, після чого обчислюється кількість днів без підживлення. Якщо вона перевищує рекомендований інтервал для виду, генерується планова задача без ознак аварійності, що відображає регулярний агротехнічний цикл.
+     Аналіз запиленості листя використовує статистичний підхід. Обчислюється частка вимірювань з низькою вологістю повітря у загальному масиві даних. Якщо більшість показників свідчить про сухе повітря і загальна кількість вимірювань достатньо велика, робиться висновок про підвищене накопичення пилу. Повідомлення формулюється як рекомендація з відкладеним дедлайном, що відображає некритичний, але накопичувальний характер проблеми.
+     Стан батареї сенсорів оцінюється окремо для кожного пристрою. Якщо рівень заряду падає нижче 15%, формується службове повідомлення для адміністративної ролі. Використовується жорсткий поріг, оскільки ризик втрати даних зростає нелінійно при низьких рівнях заряду.
+     Перед створенням нової задачі перевіряється наявність вже активної задачі того ж типу для цієї рослини. Це запобігає дублюванню повідомлень і шуму в черзі завдань. Математичні моделі, фізичні формули та логічні пороги поєднуються в єдину систему, яка транслює складні екологічні процеси у зрозумілі та практичні інструкції для людей.
+
+
+4 ВИСНОВКИ
+     
+     У ході виконання лабораторної роботи було розроблено та реалізовано серверну частину програмної системи EcoOffice, що забезпечує управління офісним простором і догляд за рослинами. 
+     У процесі роботи реалізовано бізнес-логіку серверної частини системи, побудовану на рольовій моделі доступу, яка забезпечує чітке розмежування прав користувачів відповідно до їхніх функціональних обов’язків. Реалізовано механізми автентифікації на основі JWT-токенів та авторизації за ролями, що підвищує рівень безпеки системи та запобігає несанкціонованому доступу.
+     Розроблено функції адміністрування серверної частини, управління IoT-сенсорами, резервним копіюванням бази даних, журналами догляду та телеметричними даними. Реалізовано сервіс аналізу стану рослин, який використовує багатокритеріальний підхід на основі сенсорних даних, часових рядів та біологічних норм для конкретних видів рослин. Застосовано математичні методи лінійної регресії, інтегрування та фізичні формули, що дозволяє не лише виявляти критичні відхилення параметрів, а й прогнозувати необхідність догляду. 
+
+
+
+
+
+ДОДАТОК А
+
+Відеозапис
+
+Відеозапис презентації результатів лабораторної роботи: 
+https://youtu.be/6eLJAQbb0Tg
+
+Хронологічний опис відеозапису:
+
+
+ДОДАТОК Б
+
+Графічні матеріали
+
+
+Рисунок 1 — Діаграма активності авторизації в системі
+
+Рисунок 2 — Діаграма активності обробки запиту
+
+
+
+Рисунок 3 — Діаграма взаємодії користувача з системою
+ДОДАТОК В
+
+Логіка сервісу 
+1. import { db } from '../db';
+2. import { careTasks, plants, plantSpecies, sensorReadings, careLogs, iotSensors } from '../db/schema';
+3. import { eq, and, desc, gte, or, inArray } from 'drizzle-orm';
+4. 
+5. export class AnalysisService {
+6. 
+7.   async analyzePlantHealth(plantId: string) {
+8.     const plant = await db.query.plants.findFirst({
+9.       where: eq(plants.id, plantId),
+10.       with: { species: true },
+11.     });
+12. 
+13.     if (!plant || !plant.species) return;
+14. 
+15.     const sensors = await db.query.iotSensors.findMany({
+16.       where: eq(iotSensors.plantId, plantId)
+17.     });
+18.     if (sensors.length === 0) return;
+19. 
+20.     const sensorIds = sensors.map(s => s.id);
+21. 
+22.     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+23.     const readings = await db.query.sensorReadings.findMany({
+24.       where: and(
+25.         inArray(sensorReadings.sensorId, sensorIds),
+26.         gte(sensorReadings.recordedAt, sevenDaysAgo)
+27.       ),
+28.       orderBy: [desc(sensorReadings.recordedAt)],
+29.     });
+30. 
+31.     if (readings.length === 0) return;
+32. 
+33.     const recentReadings = readings.filter(r => r.recordedAt.getTime() > Date.now() - 24 * 60 * 60 * 1000);
+34. 
+35.     await this.checkTemperatureLimits(plant, plant.species, recentReadings);
+36.     await this.checkLightLimits(plant, plant.species, recentReadings);
+37.     await this.checkSoilLimits(plant, plant.species, recentReadings);
+38. 
+39.     await this.analyzeWateringTrend(plant, plant.species, readings);
+40.     await this.analyzePestRisksVPD(plant, recentReadings);
+41.     await this.analyzeLightIntegral(plant, plant.species, readings);
+42.     await this.analyzeFertilizing(plant, plant.species, readings);
+43.     await this.analyzeDustAccumulation(plant, readings);
+44. 
+45.     for (const sensor of sensors) {
+46.       const sensorSpecificReadings = readings.filter(r => r.sensorId === sensor.id);
+47.       await this.analyzeBattery(plant, sensor, sensorSpecificReadings);
+48.     }
+49.   }
+50. 
+51.   private async checkTemperatureLimits(plant: any, species: any, readings: any[]) {
+52.     const tempReading = readings.find(r => r.type === 'AIR_TEMPERATURE');
+53.     if (!tempReading) return;
+54. 
+55.     const currentTemp = Number(tempReading.value);
+56. 
+57.     if (species.minTemperature && currentTemp < species.minTemperature) {
+58.       await this.createTaskIfNotExists(plant.id, 'LIGHT_ADJUSTMENT', {
+59.         priority: 3,
+60.         requiredRole: 'OFFICE_MANAGER',
+61.         description: ` COLD STRESS! Temperature ${currentTemp}°C is below the norm (${species.minTemperature}°C). Check windows/AC or relocate the plant.`,
+62.       });
+63.     }
+64. 
+65.     if (species.maxTemperature && currentTemp > species.maxTemperature) {
+66.       await this.createTaskIfNotExists(plant.id, 'WATERING', {
+67.         priority: 3,
+68.         description: ` HEAT STRESS! Temperature ${currentTemp}°C is above the norm (${species.maxTemperature}°C). The plant is overheating.`,
+69.       });
+70.     }
+71.   }
+72. 
+73.   private async checkLightLimits(plant: any, species: any, readings: any[]) {
+74.     const lightReading = readings.find(r => r.type === 'LIGHT_INTENSITY');
+75.     if (!lightReading) return;
+76. 
+77.     const currentLux = Number(lightReading.value);
+78. 
+79.     if (currentLux > 100 && species.maxLightLux && currentLux > species.maxLightLux) {
+80.       await this.createTaskIfNotExists(plant.id, 'LIGHT_ADJUSTMENT', {
+81.         priority: 2,
+82.         description: ` BURN RISK! Current light ${currentLux} lux exceeds the species maximum (${species.maxLightLux} lux). Provide shading.`,
+83.       });
+84.     }
+85. 
+86.     const hour = new Date().getHours();
+87.     const isDayTime = hour > 9 && hour < 17;
+88.     if (isDayTime && species.minLightLux && currentLux < species.minLightLux * 0.5) {
+89.       await this.createTaskIfNotExists(plant.id, 'LIGHT_ADJUSTMENT', {
+90.         priority: 2,
+91.         description: ` TOO DARK! During daytime only ${currentLux} lux (Min: ${species.minLightLux} lux). The plant lacks energy.`,
+92.       });
+93.     }
+94.   }
+95. 
+96.   private async checkSoilLimits(plant: any, species: any, readings: any[]) {
+97.     const soilReading = readings.find(r => r.type === 'SOIL_MOISTURE');
+98.     if (!soilReading) return;
+99. 
+100.     const currentMoisture = Number(soilReading.value);
+101. 
+102.     if (species.maxSoilMoisture && currentMoisture > species.maxSoilMoisture + 10) {
+103.       await this.createTaskIfNotExists(plant.id, 'CLEANING', {
+104.         priority: 2,
+105.         requiredRole: 'FLORIST',
+106.         description: ` ROOT DAMAGE RISK! Moisture ${currentMoisture}% exceeds the norm (${species.maxSoilMoisture}%). Check drainage and remove excess water.`,
+107.       });
+108.     }
+109. 
+110.     if (currentMoisture <= species.minSoilMoisture) {
+111.       await this.createTaskIfNotExists(plant.id, 'WATERING', {
+112.         priority: 3,
+113.         description: ` CRITICALLY DRY! Moisture ${currentMoisture}% (Min: ${species.minSoilMoisture}%). Water immediately.`,
+114.       });
+115.     }
+116.   }
+117. 
+118.   private async analyzeWateringTrend(plant: any, species: any, readings: any[]) {
+119.     const moistureData = readings
+120.       .filter(r => r.type === 'SOIL_MOISTURE' && r.recordedAt.getTime() > Date.now() - 48 * 60 * 60 * 1000)
+121.       .map(r => [r.recordedAt.getTime(), Number(r.value)]);
+122. 
+123.     if (moistureData.length < 5) return;
+124. 
+125.     const currentVal = moistureData[0][1];
+126.     if (currentVal <= species.minSoilMoisture) return;
+127. 
+128.     const { slope, intercept } = this.linearRegression(moistureData);
+129. 
+130.     if (slope < 0) {
+131.       const targetTime = (species.minSoilMoisture - intercept) / slope;
+132.       const hoursLeft = (targetTime - Date.now()) / (3600 * 1000);
+133. 
+134.       if (hoursLeft <= 24 && hoursLeft > 0) {
+135.         await this.createTaskIfNotExists(plant.id, 'WATERING', {
+136.           priority: 2,
+137.           dueDate: new Date(targetTime),
+138.           description: ` Moisture will reach the minimum (${species.minSoilMoisture}%) in ${hoursLeft.toFixed(1)} hours.`,
+139.         });
+140.       }
+141.     }
+142.   }
+143. 
+144.   private async analyzePestRisksVPD(plant: any, readings: any[]) {
+145.     const tempReading = readings.find(r => r.type === 'AIR_TEMPERATURE');
+146.     const humReading = readings.find(r => r.type === 'AIR_HUMIDITY');
+147. 
+148.     if (!tempReading || !humReading) return;
+149. 
+150.     const T = Number(tempReading.value);
+151.     const RH = Number(humReading.value);
+152. 
+153.     const SVP = 0.6108 * Math.exp((17.27 * T) / (T + 237.3));
+154.     const VPD = SVP * (1 - RH / 100);
+155. 
+156.     if (VPD > 2.0) {
+157.       await this.createTaskIfNotExists(plant.id, 'PEST_CONTROL', {
+158.         priority: 1,
+159.         description: ` High VPD (${VPD.toFixed(2)} kPa). Air is too dry. High risk of spider mites. Increase humidity.`,
+160.       });
+161.     } else if (VPD < 0.2) {
+162.       await this.createTaskIfNotExists(plant.id, 'PEST_CONTROL', {
+163.         priority: 2,
+164.         description: ` Low VPD (${VPD.toFixed(2)} kPa). Risk of fungal diseases. Improve ventilation.`,
+165.       });
+166.     }
+167.   }
+168. 
+169.   private async analyzeLightIntegral(plant: any, species: any, readings: any[]) {
+170.     const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
+171.     const lightReadings = readings
+172.       .filter(r => r.type === 'LIGHT_INTENSITY' && r.recordedAt.getTime() > oneDayAgo)
+173.       .sort((a, b) => a.recordedAt.getTime() - b.recordedAt.getTime());
+174. 
+175.     if (lightReadings.length < 5) return;
+176. 
+177.     let luxHours = 0;
+178.     for (let i = 1; i < lightReadings.length; i++) {
+179.       const dt = (lightReadings[i].recordedAt.getTime() - lightReadings[i - 1].recordedAt.getTime()) / (3600 * 1000);
+180.       const avgLux = (Number(lightReadings[i].value) + Number(lightReadings[i - 1].value)) / 2;
+181.       luxHours += avgLux * dt;
+182.     }
+183. 
+184.     const requiredLuxHours = (species.minLightLux || 500) * 12;
+185. 
+186.     if (luxHours < requiredLuxHours * 0.6) {
+187.       await this.createTaskIfNotExists(plant.id, 'LIGHT_ADJUSTMENT', {
+188.         priority: 1,
+189.         description: `DLI deficit: Collected ${luxHours.toFixed(0)} lux·h per day (Required ~${requiredLuxHours}). The plant lacks light.`,
+190.       });
+191.     }
+192.   }
+193. 
+194.   private async analyzeFertilizing(plant: any, species: any, readings: any[]) {
+195.     if (!species.fertilizingFrequencyDays) return;
+196. 
+197.     const lastFert = await db.query.careLogs.findFirst({
+198.       where: and(eq(careLogs.plantId, plant.id), eq(careLogs.type, 'FERTILIZING')),
+199.       orderBy: [desc(careLogs.performedAt)]
+200.     });
+201. 
+202.     const lastDate = lastFert ? lastFert.performedAt : plant.createdAt;
+203.     const daysSince = (Date.now() - lastDate.getTime()) / (1000 * 3600 * 24);
+204. 
+205.     if (daysSince >= species.fertilizingFrequencyDays) {
+206.       await this.createTaskIfNotExists(plant.id, 'FERTILIZING', {
+207.         priority: 1,
+208.         description: `Scheduled fertilizing (last applied ${daysSince.toFixed(0)} days ago).`,
+209.       });
+210.     }
+211.   }
+212. 
+213.   private async analyzeDustAccumulation(plant: any, readings: any[]) {
+214.     const dryReadings = readings.filter(r => r.type === 'AIR_HUMIDITY' && Number(r.value) < 35);
+215.     if (readings.length > 20 && (dryReadings.length / readings.length) > 0.5) {
+216.       await this.createTaskIfNotExists(plant.id, 'CLEANING', {
+217.         priority: 1,
+218.         dueDate: new Date(Date.now() + 2 * 24 * 3600 * 1000),
+219.         description: ` High dust accumulation due to dry air. Wipe the leaves.`,
+220.       });
+221.     }
+222.   }
+223. 
+224.   private async analyzeBattery(plant: any, sensor: any, readings: any[]) {
+225.     const batReading = readings.find(r => r.type === 'BATTERY_LEVEL');
+226.     if (!batReading) return;
+227. 
+228.     const level = Number(batReading.value);
+229.     if (level < 15) {
+230.       await this.createGenericTask(
+231.         'OFFICE_MANAGER',
+232.         'CLEANING',
+233.         ` BATTERY REPLACEMENT REQUIRED! Sensor ${sensor.macAddress} on plant "${plant.name}". Level: ${level}%`
+234.       );
+235.     }
+236.   }
+237. 
+238.   private linearRegression(data: number[][]) {
+239.     const n = data.length;
+240.     let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
+241.     for (const [x, y] of data) {
+242.       sumX += x;
+243.       sumY += y;
+244.       sumXY += x * y;
+245.       sumXX += x * x;
+246.     }
+247.     const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+248.     const intercept = (sumY - slope * sumX) / n;
+249.     return { slope, intercept };
+250.   }
+251. 
+252.   private async createTaskIfNotExists(plantId: string, type: string, details: any) {
+253.     const existing = await db.query.careTasks.findFirst({
+254.       where: and(
+255.         eq(careTasks.plantId, plantId),
+256.         eq(careTasks.type, type as any),
+257.         or(eq(careTasks.status, 'PENDING'), eq(careTasks.status, 'IN_PROGRESS'))
+258.       ),
+259.     });
+260. 
+261.     if (!existing) {
+262.       await db.insert(careTasks).values({
+263.         plantId,
+264.         type: type as any,
+265.         requiredRole: details.requiredRole || (type === 'WATERING' || type === 'CLEANING' ? 'CLEANER' : 'FLORIST'),
+266.         status: 'PENDING',
+267.         priority: details.priority || 1,
+268.         dueDate: details.dueDate || new Date(),
+269.         description: details.description,
+270.       });
+271.       console.log(`[Analysis] Created ${type} task for plant ${plantId}`);
+272.     }
+273.   }
+274. 
+275.   private async createGenericTask(role: string, type: string, description: string) {
+276.     console.log(`[Generic Task] ${type} for ${role}: ${description}`);
+277.   }
+278. }
+279. 
+
+ДОДАТОК Г
+ Специфікація:
+
+Адміністратор
+IoT Сенсори:
+• GET /api/sensors (Список всіх сенсорів)
+• GET /api/sensors/{id} (Деталі сенсора)
+• POST /api/sensors (Створення нового сенсора)
+• PUT /api/sensors/{id} (Редагування сенсора)
+• DELETE /api/sensors/{id} (Видалення сенсора)
+Резервне копіювання (Backups):
+• GET /api/backups (Список бекапів)
+• POST /api/backups (Створити бекап)
+• GET /api/backups/download/{filename} (Завантажити файл)
+• POST /api/backups/restore (Відновити БД з файлу)
+Показники (Readings):
+• POST /api/readings (Ручне внесення показників)
+• PUT /api/readings/{id} (Редагування показника)
+• DELETE /api/readings/{id} (Видалення помилкового показника)
+Журнал догляду (Care Logs):
+• PUT /api/logs/{id} (Редагування запису журналу)
+• DELETE /api/logs/{id} (Видалення запису журналу)
+
+Флорист		
+Рослини (Plants):
+• GET /api/plants (Список рослин)
+• GET /api/plants/{id} (Деталі рослини)
+• POST /api/plants (Додати нову рослину)
+• PUT /api/plants/{id} (Оновити дані рослини)
+• DELETE /api/plants/{id} (Видалити рослину)
+Види рослин (Plant Species):
+• GET /api/species (Довідник видів)
+• POST /api/species (Додати новий вид)
+• PUT /api/species/{id} (Редагувати вид)
+• DELETE /api/species/{id} (Видалити вид)
+Аналітика:
+• GET /api/stats (Загальна статистика системи)
+Завдання та Догляд:
+• GET /api/tasks (Перегляд завдань)
+• POST /api/logs (Звіт про виконання догляду)
+
+Офіс-менеджер
+Локації (Locations):
+• GET /api/locations (Список локацій)
+• GET /api/locations/{id} (Деталі локації)
+• POST /api/locations (Створити нову локацію)
+• PUT /api/locations/{id} (Редагувати локацію)
+• DELETE /api/locations/{id} (Видалити локацію)
+Перегляд:
+• Має доступ на читання (GET) до списків рослин, сенсорів та журналів, але не може їх змінювати.
+
+Прибиральник
+Догляд (Care):
+• POST /api/logs (Створити звіт про виконання роботи) — основна функція.
+Перегляд (тільки читання):
+• GET /api/plants (Щоб знайти рослину)
+• GET /api/locations (Щоб знайти кімнату)
+• GET /api/tasks (Щоб побачити свої завдання)
+• GET /api/logs (Історія догляду)
+
+Публічні
+Аутентифікація:
+• POST /api/auth/register (Реєстрація)
+• POST /api/auth/login (Вхід)
+Читання даних:
+• GET /api/readings (Останні показники)
+• GET /api/readings/sensor/{sensorId} (Історія сенсора)
+• GET /api/logs/plant/{plantId} (Історія догляду за рослиною)
+
+
+
+2
+
+
+
+
+
+
+
+
+
+

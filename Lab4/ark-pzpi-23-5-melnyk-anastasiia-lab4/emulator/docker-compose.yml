@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  # 1. Локальний MQTT Брокер для IoT мережі
+  mqtt-broker:
+    image: eclipse-mosquitto:2
+    container_name: mqtt-broker
+    restart: always
+    ports:
+      - "1883:1883" # Порт для зовнішніх підключень (опціонально)
+      - "9001:9001" # Websockets (якщо треба)
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./mosquitto_data:/mosquitto/data
+      - ./mosquitto_log:/mosquitto/log
+    networks:
+      - eco-office-network
+
+  # 2. IoT Симулятор + Bridge
+  iot-client:
+    build: .
+    container_name: iot-client
+    restart: unless-stopped
+    depends_on:
+      - mqtt-broker
+    environment:
+      # Налаштування MQTT (вказуємо ім'я сервісу вище)
+      - MQTT_BROKER=mqtt-broker
+      - MQTT_PORT=1883
+      - TOPIC_PREFIX=eco-office/devices
+   
+      - API_BASE_URL=http://localhost:3000
+      
+      - SEND_INTERVAL=5
+    volumes:
+     
+      - ./sensor_history.json:/app/sensor_history.json
+    networks:
+      - eco-office-network
+
+networks:
+  eco-office-network:
+    external: true
